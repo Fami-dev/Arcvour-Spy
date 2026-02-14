@@ -614,6 +614,23 @@ function Ui:BuildContent()
             self:SetStatus("Script path copied!")
         end
     end)
+    
+    if decompile then
+        makeBtn(actionRow, "Decompile", nil, function()
+            if selectedLog and selectedLog.callingScript then
+                local source = decompile(selectedLog.callingScript)
+                if setclipboard then
+                    setclipboard(source)
+                    self:SetStatus("Source copied to clipboard!")
+                else
+                    codeBox.Text = "-- Decompiled Source:\n\n" .. source
+                    self:SetStatus("Source shown in editor")
+                end
+            else
+                self:SetStatus("No calling script!")
+            end
+        end)
+    end
     makeBtn(actionRow, "Exclude", nil, function()
         if selectedLog then
             Process:BlacklistById(selectedLog.id)
