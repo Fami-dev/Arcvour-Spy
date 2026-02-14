@@ -8,40 +8,52 @@ if not game:GetService("RunService"):IsClient() then
     return
 end
 
-local requiredFunctions = {
-    "hookmetamethod",
-    "hookfunction",
-    "getrawmetatable",
-    "newcclosure",
-    "checkcaller",
-    "cloneref",
-}
+if not hookfunction then
+    error("[Arcvour Spy] Missing critical function: hookfunction")
+    return
+end
 
-for _, name in requiredFunctions do
-    if not getfenv()[name] then
-        if name == "hookmetamethod" then
-            if not getfenv()["hookfunction"] then
-                error("[Arcvour Spy] Missing critical function: " .. name)
-                return
-            end
-        elseif name == "cloneref" then
-            getfenv().cloneref = function(obj) return obj end
-        else
-            error("[Arcvour Spy] Missing critical function: " .. name)
-            return
-        end
-    end
+if not newcclosure then
+    error("[Arcvour Spy] Missing critical function: newcclosure")
+    return
+end
+
+if not getnamecallmethod then
+    error("[Arcvour Spy] Missing critical function: getnamecallmethod")
+    return
+end
+
+if not checkcaller then
+    getgenv().checkcaller = function() return false end
+end
+
+if not cloneref then
+    getgenv().cloneref = function(obj) return obj end
+end
+
+if not getcallingscript then
+    getgenv().getcallingscript = function() return nil end
+end
+
+if not getnilinstances then
+    getgenv().getnilinstances = function() return {} end
 end
 
 local REPO_BASE = "https://raw.githubusercontent.com/Fami-dev/Arcvour-Spy/main/"
 
 local function loadModule(name)
     local url = REPO_BASE .. name .. ".lua"
-    local success, result = pcall(function()
-        return loadstring(game:HttpGet(url), "ArcvourSpy-" .. name)()
-    end)
+    local source = game:HttpGet(url)
+    if not source or source == "" or source:find("404") then
+        error("[Arcvour Spy] Failed to download " .. name)
+    end
+    local fn, compileErr = loadstring(source, "ArcvourSpy_" .. name)
+    if not fn then
+        error("[Arcvour Spy] Failed to compile " .. name .. ": " .. tostring(compileErr))
+    end
+    local success, result = pcall(fn)
     if not success then
-        error("[Arcvour Spy] Failed to load " .. name .. ": " .. tostring(result))
+        error("[Arcvour Spy] Failed to execute " .. name .. ": " .. tostring(result))
     end
     return result
 end
@@ -70,6 +82,8 @@ local ok, err = pcall(function()
         Ui = UiModule,
         Serializer = Serializer,
         Shutdown = function()
+            Hook:DisableHooks()
+            Process:Shutdown()
             UiModule:Shutdown()
             getgenv().ArcvourSpyExecuted = false
             getgenv().ArcvourSpy = nil
@@ -77,11 +91,9 @@ local ok, err = pcall(function()
     }
 
     getgenv().getNil = function(name, class)
-        if getnilinstances then
-            for _, v in getnilinstances() do
-                if v.ClassName == class and v.Name == name then
-                    return v
-                end
+        for _, v in getnilinstances() do
+            if v.ClassName == class and v.Name == name then
+                return v
             end
         end
     end

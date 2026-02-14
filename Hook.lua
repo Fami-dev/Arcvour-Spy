@@ -18,8 +18,17 @@ function Hook:BeginHooks()
     if hooked then return end
     hooked = true
 
-    local newNamecall = newcclosure(function(...)
-        local method = getnamecallmethod()
+    local _checkcaller = checkcaller or function() return false end
+    local _hookmetamethod = hookmetamethod
+    local _hookfunction = hookfunction
+    local _newcclosure = newcclosure
+    local _getnamecallmethod = getnamecallmethod
+
+    local newNamecall = _newcclosure(function(...)
+        local ok, method = pcall(_getnamecallmethod)
+        if not ok or not method then
+            return originalNamecall(...)
+        end
 
         if method == "FireServer" or method == "fireServer"
             or method == "InvokeServer" or method == "invokeServer" then
@@ -31,7 +40,7 @@ function Hook:BeginHooks()
                     or className == "UnreliableRemoteEvent" then
 
                     if Process:IsRemoteAllowed(remote, "Send", method) then
-                        local isExploit = checkcaller()
+                        local isExploit = _checkcaller()
                         local args = {select(2, ...)}
 
                         task.spawn(function()
@@ -52,70 +61,77 @@ function Hook:BeginHooks()
         return originalNamecall(...)
     end)
 
-    if hookmetamethod then
-        originalNamecall = hookmetamethod(game, "__namecall", newNamecall)
-    else
-        originalNamecall = hookfunction(getrawmetatable(game).__namecall, newNamecall)
+    if _hookmetamethod then
+        originalNamecall = _hookmetamethod(game, "__namecall", newNamecall)
+    elseif getrawmetatable then
+        originalNamecall = _hookfunction(getrawmetatable(game).__namecall, newNamecall)
     end
 
-    local newFireServer = newcclosure(function(remote, ...)
-        if typeof(remote) == "Instance" and
-            (remote:IsA("RemoteEvent") or remote:IsA("UnreliableRemoteEvent")) then
+    pcall(function()
+        local testEvent = Instance.new("RemoteEvent")
 
-            if Process:IsRemoteAllowed(remote, "Send", "FireServer") then
-                local isExploit = checkcaller()
-                local args = {...}
+        local newFireServer = _newcclosure(function(remote, ...)
+            if typeof(remote) == "Instance" and
+                (remote:IsA("RemoteEvent") or remote:IsA("UnreliableRemoteEvent")) then
 
-                task.spawn(function()
-                    Process:LogRemote({
-                        remote = remote,
-                        method = "FireServer",
-                        args = args,
-                        metamethod = "__index",
-                        isExploit = isExploit,
-                        isReceive = false,
-                    })
-                end)
+                if Process:IsRemoteAllowed(remote, "Send", "FireServer") then
+                    local isExploit = _checkcaller()
+                    local args = {...}
+
+                    task.spawn(function()
+                        Process:LogRemote({
+                            remote = remote,
+                            method = "FireServer",
+                            args = args,
+                            metamethod = "__index",
+                            isExploit = isExploit,
+                            isReceive = false,
+                        })
+                    end)
+                end
             end
-        end
-        return originalFireServer(remote, ...)
+            return originalFireServer(remote, ...)
+        end)
+
+        originalFireServer = _hookfunction(testEvent.FireServer, newFireServer)
+        testEvent:Destroy()
     end)
-
-    local newInvokeServer = newcclosure(function(remote, ...)
-        if typeof(remote) == "Instance" and remote:IsA("RemoteFunction") then
-            if Process:IsRemoteAllowed(remote, "Send", "InvokeServer") then
-                local isExploit = checkcaller()
-                local args = {...}
-
-                task.spawn(function()
-                    Process:LogRemote({
-                        remote = remote,
-                        method = "InvokeServer",
-                        args = args,
-                        metamethod = "__index",
-                        isExploit = isExploit,
-                        isReceive = false,
-                    })
-                end)
-            end
-        end
-        return originalInvokeServer(remote, ...)
-    end)
-
-    originalFireServer = hookfunction(
-        Instance.new("RemoteEvent").FireServer,
-        newFireServer
-    )
-    originalInvokeServer = hookfunction(
-        Instance.new("RemoteFunction").InvokeServer,
-        newInvokeServer
-    )
 
     pcall(function()
-        local newUnreliableFire = newcclosure(function(remote, ...)
+        local testFunc = Instance.new("RemoteFunction")
+
+        local newInvokeServer = _newcclosure(function(remote, ...)
+            if typeof(remote) == "Instance" and remote:IsA("RemoteFunction") then
+                if Process:IsRemoteAllowed(remote, "Send", "InvokeServer") then
+                    local isExploit = _checkcaller()
+                    local args = {...}
+
+                    task.spawn(function()
+                        Process:LogRemote({
+                            remote = remote,
+                            method = "InvokeServer",
+                            args = args,
+                            metamethod = "__index",
+                            isExploit = isExploit,
+                            isReceive = false,
+                        })
+                    end)
+                end
+            end
+            return originalInvokeServer(remote, ...)
+        end)
+
+        originalInvokeServer = _hookfunction(testFunc.InvokeServer, newInvokeServer)
+        testFunc:Destroy()
+    end)
+
+    pcall(function()
+        local testURE = Instance.new("UnreliableRemoteEvent")
+
+        local newUnreliableFire = _newcclosure(function(remote, ...)
             if typeof(remote) == "Instance" and remote:IsA("UnreliableRemoteEvent") then
                 if Process:IsRemoteAllowed(remote, "Send", "FireServer") then
-                    local isExploit = checkcaller()
+                    local isExploit = _checkcaller()
                     local args = {...}
 
                     task.spawn(function()
@@ -133,10 +149,8 @@ function Hook:BeginHooks()
             return originalUnreliableFireServer(remote, ...)
         end)
 
-        originalUnreliableFireServer = hookfunction(
-            Instance.new("UnreliableRemoteEvent").FireServer,
-            newUnreliableFire
-        )
+        originalUnreliableFireServer = _hookfunction(testURE.FireServer, newUnreliableFire)
+        testURE:Destroy()
     end)
 end
 
@@ -152,7 +166,7 @@ function Hook:ConnectReceive(remote)
 
     if classData.IsRemoteFunction then
         pcall(function()
-            local existingCallback = getcallbackvalue(remote, method)
+            local existingCallback = getcallbackvalue and getcallbackvalue(remote, method)
             if existingCallback then
                 hookfunction(existingCallback, newcclosure(function(...)
                     task.spawn(function()
@@ -194,11 +208,9 @@ function Hook:HookReceives()
         end
     end)
 
-    if getnilinstances then
-        for _, inst in getnilinstances() do
-            if Process:GetClassData(inst) then
-                self:ConnectReceive(inst)
-            end
+    for _, inst in getnilinstances() do
+        if Process:GetClassData(inst) then
+            self:ConnectReceive(inst)
         end
     end
 
@@ -231,22 +243,26 @@ function Hook:DisableHooks()
     pcall(function()
         if hookmetamethod then
             hookmetamethod(game, "__namecall", originalNamecall)
-        else
+        elseif getrawmetatable then
             hookfunction(getrawmetatable(game).__namecall, originalNamecall)
         end
     end)
 
-    pcall(function()
-        hookfunction(Instance.new("RemoteEvent").FireServer, originalFireServer)
-    end)
+    if originalFireServer then
+        pcall(function()
+            hookfunction(originalFireServer, originalFireServer)
+        end)
+    end
 
-    pcall(function()
-        hookfunction(Instance.new("RemoteFunction").InvokeServer, originalInvokeServer)
-    end)
+    if originalInvokeServer then
+        pcall(function()
+            hookfunction(originalInvokeServer, originalInvokeServer)
+        end)
+    end
 
     if originalUnreliableFireServer then
         pcall(function()
-            hookfunction(Instance.new("UnreliableRemoteEvent").FireServer, originalUnreliableFireServer)
+            hookfunction(originalUnreliableFireServer, originalUnreliableFireServer)
         end)
     end
 end
