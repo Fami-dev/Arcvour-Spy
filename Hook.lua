@@ -14,15 +14,6 @@ function Hook:Init(config, process)
     Process = process
 end
 
-local function processRemoteCall(originalFunc, metaMethod, remote, method, ...)
-    return Process:ProcessRemote({
-        Method = method,
-        OriginalFunc = originalFunc,
-        MetaMethod = metaMethod,
-        IsExploit = checkcaller(),
-    }, remote, ...)
-end
-
 function Hook:BeginHooks()
     if hooked then return end
     hooked = true
@@ -39,11 +30,21 @@ function Hook:BeginHooks()
                 if className == "RemoteEvent" or className == "RemoteFunction"
                     or className == "UnreliableRemoteEvent" then
 
-                    if not Process:IsRemoteAllowed(remote, "Send", method) then
-                        return originalNamecall(...)
-                    end
+                    if Process:IsRemoteAllowed(remote, "Send", method) then
+                        local isExploit = checkcaller()
+                        local args = {select(2, ...)}
 
-                    return processRemoteCall(originalNamecall, "__namecall", remote, method, select(2, ...))
+                        task.spawn(function()
+                            Process:LogRemote({
+                                remote = remote,
+                                method = method,
+                                args = args,
+                                metamethod = "__namecall",
+                                isExploit = isExploit,
+                                isReceive = false,
+                            })
+                        end)
+                    end
                 end
             end
         end
@@ -62,7 +63,19 @@ function Hook:BeginHooks()
             (remote:IsA("RemoteEvent") or remote:IsA("UnreliableRemoteEvent")) then
 
             if Process:IsRemoteAllowed(remote, "Send", "FireServer") then
-                return processRemoteCall(originalFireServer, "__index", remote, "FireServer", ...)
+                local isExploit = checkcaller()
+                local args = {...}
+
+                task.spawn(function()
+                    Process:LogRemote({
+                        remote = remote,
+                        method = "FireServer",
+                        args = args,
+                        metamethod = "__index",
+                        isExploit = isExploit,
+                        isReceive = false,
+                    })
+                end)
             end
         end
         return originalFireServer(remote, ...)
@@ -71,7 +84,19 @@ function Hook:BeginHooks()
     local newInvokeServer = newcclosure(function(remote, ...)
         if typeof(remote) == "Instance" and remote:IsA("RemoteFunction") then
             if Process:IsRemoteAllowed(remote, "Send", "InvokeServer") then
-                return processRemoteCall(originalInvokeServer, "__index", remote, "InvokeServer", ...)
+                local isExploit = checkcaller()
+                local args = {...}
+
+                task.spawn(function()
+                    Process:LogRemote({
+                        remote = remote,
+                        method = "InvokeServer",
+                        args = args,
+                        metamethod = "__index",
+                        isExploit = isExploit,
+                        isReceive = false,
+                    })
+                end)
             end
         end
         return originalInvokeServer(remote, ...)
@@ -90,7 +115,19 @@ function Hook:BeginHooks()
         local newUnreliableFire = newcclosure(function(remote, ...)
             if typeof(remote) == "Instance" and remote:IsA("UnreliableRemoteEvent") then
                 if Process:IsRemoteAllowed(remote, "Send", "FireServer") then
-                    return processRemoteCall(originalUnreliableFireServer, "__index", remote, "FireServer", ...)
+                    local isExploit = checkcaller()
+                    local args = {...}
+
+                    task.spawn(function()
+                        Process:LogRemote({
+                            remote = remote,
+                            method = "FireServer",
+                            args = args,
+                            metamethod = "__index",
+                            isExploit = isExploit,
+                            isReceive = false,
+                        })
+                    end)
                 end
             end
             return originalUnreliableFireServer(remote, ...)
@@ -118,12 +155,16 @@ function Hook:ConnectReceive(remote)
             local existingCallback = getcallbackvalue(remote, method)
             if existingCallback then
                 hookfunction(existingCallback, newcclosure(function(...)
-                    Process:ProcessRemote({
-                        Method = method,
-                        IsReceive = true,
-                        MetaMethod = "Connect",
-                        IsExploit = false,
-                    }, remote, ...)
+                    task.spawn(function()
+                        Process:LogRemote({
+                            remote = remote,
+                            method = method,
+                            args = {...},
+                            metamethod = "Connect",
+                            isExploit = false,
+                            isReceive = true,
+                        })
+                    end)
                     return existingCallback(...)
                 end))
             end
@@ -131,12 +172,14 @@ function Hook:ConnectReceive(remote)
     else
         pcall(function()
             remote[method]:Connect(function(...)
-                Process:ProcessRemote({
-                    Method = method,
-                    IsReceive = true,
-                    MetaMethod = "Connect",
-                    IsExploit = false,
-                }, remote, ...)
+                Process:LogRemote({
+                    remote = remote,
+                    method = method,
+                    args = {...},
+                    metamethod = "Connect",
+                    isExploit = false,
+                    isReceive = true,
+                })
             end)
         end)
     end

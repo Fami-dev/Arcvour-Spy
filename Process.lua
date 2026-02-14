@@ -6,12 +6,10 @@ local Ui = nil
 
 local blacklist = {}
 local blocklist = {}
-local remoteData = {}
 local history = {}
 local excluding = {}
 local logQueue = {}
 
-local spyENV = getfenv(1)
 local schedulerConnection = nil
 
 local instanceCreatedRemotes = setmetatable({}, {__mode = "k"})
@@ -20,14 +18,16 @@ function Process:Init(config, serializer)
     Config = config
     Serializer = serializer
 
-    local oldNew
-    oldNew = hookfunction(getrenv().Instance.new, newcclosure(function(...)
-        local inst = oldNew(...)
-        if typeof(inst) == "Instance" and Config.RemoteClassData[inst.ClassName] then
-            instanceCreatedRemotes[inst] = true
-        end
-        return inst
-    end))
+    pcall(function()
+        local oldNew
+        oldNew = hookfunction(Instance.new, newcclosure(function(className, ...)
+            local inst = oldNew(className, ...)
+            if typeof(inst) == "Instance" and Config.RemoteClassData[className] then
+                instanceCreatedRemotes[inst] = true
+            end
+            return inst
+        end))
+    end)
 end
 
 function Process:SetUi(ui)
@@ -56,10 +56,6 @@ function Process:IsRemoteAllowed(remote, transferType, method)
     return true
 end
 
-function Process:IsSelfENV(env)
-    return env == spyENV
-end
-
 function Process:GetRemoteId(remote)
     if not remote then return "" end
     local success, id = pcall(function()
@@ -68,36 +64,8 @@ function Process:GetRemoteId(remote)
     return success and id or tostring(remote)
 end
 
-function Process:IsBlacklisted(remote, id)
-    return blacklist[id] or blacklist[remote.Name]
-end
-
-function Process:IsBlocked(remote, id)
-    return blocklist[id] or blocklist[remote.Name]
-end
-
-function Process:BlacklistById(id)
-    blacklist[id] = true
-end
-
-function Process:BlacklistByName(name)
-    blacklist[name] = true
-end
-
-function Process:BlockById(id)
-    blocklist[id] = true
-end
-
-function Process:BlockByName(name)
-    blocklist[name] = true
-end
-
-function Process:ClearBlacklist()
-    table.clear(blacklist)
-end
-
-function Process:ClearBlocklist()
-    table.clear(blocklist)
+function Process:IsBlacklisted(id)
+    return excluding[id] or blacklist[id]
 end
 
 function Process:ShouldAutoblock(id)
@@ -129,9 +97,6 @@ end
 
 function Process:DeepClone(value, visited)
     if typeof(value) ~= "table" then
-        if typeof(value) == "Instance" then
-            return cloneref and cloneref(value) or value
-        end
         return value
     end
 
@@ -150,40 +115,70 @@ end
 
 function Process:GetCallerInfo()
     local callingScript = nil
-    local callingFunc = nil
-
-    pcall(function()
-        callingFunc = debug.info(5, "f")
-    end)
 
     pcall(function()
         local script = getcallingscript()
         if script and typeof(script) == "Instance" then
-            callingScript = cloneref and cloneref(script) or script
+            callingScript = script
         end
     end)
 
-    if callingFunc then
+    return callingScript
+end
+
+function Process:BlacklistById(id)
+    blacklist[id] = true
+end
+
+function Process:BlockById(id)
+    blocklist[id] = true
+end
+
+function Process:ClearBlacklist()
+    table.clear(blacklist)
+    table.clear(excluding)
+end
+
+function Process:ClearBlocklist()
+    table.clear(blocklist)
+end
+
+function Process:LogRemote(info)
+    local settings = Config.Settings
+    if settings.Paused then return end
+    if not settings.LogExploit and info.isExploit then return end
+    if not settings.LogReceive and info.isReceive then return end
+
+    local remote = info.remote
+    local id = self:GetRemoteId(remote)
+
+    if self:IsBlacklisted(id) then return end
+    if self:ShouldAutoblock(id) then return end
+
+    if settings.IgnoreNilParent then
         pcall(function()
-            local env = getfenv(callingFunc)
-            if env and not self:IsSelfENV(env) then
-                local s = rawget(env, "script")
-                if s and typeof(s) == "Instance" then
-                    callingScript = callingScript or (cloneref and cloneref(s) or s)
-                end
-            end
+            if remote.Parent == nil then return end
         end)
     end
 
-    return callingScript, callingFunc
-end
+    local callingScript = nil
+    if not info.isReceive then
+        callingScript = self:GetCallerInfo()
+    end
 
-function Process:QueueLog(data)
-    local settings = Config.Settings
-    if settings.Paused then return end
-    if not settings.LogExploit and data.isExploit then return end
-    if not settings.LogReceive and data.isReceive then return end
-    if settings.IgnoreNilParent and data.remote.Parent == nil then return end
+    local data = {
+        remote = remote,
+        method = info.method,
+        args = self:DeepClone(info.args),
+        id = id,
+        metamethod = info.metamethod or "__namecall",
+        isReceive = info.isReceive or false,
+        isExploit = info.isExploit or false,
+        callingScript = callingScript,
+        className = remote.ClassName,
+        timestamp = tick(),
+        blocked = blocklist[id] or false,
+    }
 
     table.insert(logQueue, data)
 end
@@ -210,62 +205,6 @@ function Process:StopScheduler()
     if schedulerConnection then
         schedulerConnection:Disconnect()
         schedulerConnection = nil
-    end
-end
-
-function Process:ProcessRemote(info, remote, ...)
-    local method = info.Method
-    local isReceive = info.IsReceive
-    local isExploit = info.IsExploit
-    local originalFunc = info.OriginalFunc
-
-    local remote = cloneref and cloneref(remote) or remote
-    local id = self:GetRemoteId(remote)
-
-    if self:IsBlacklisted(remote, id) then
-        if originalFunc and not isReceive then
-            return originalFunc(remote, ...)
-        end
-        return
-    end
-
-    if self:ShouldAutoblock(id) then
-        if originalFunc and not isReceive then
-            return originalFunc(remote, ...)
-        end
-        return
-    end
-
-    local blocked = self:IsBlocked(remote, id)
-
-    local args = self:DeepClone({...})
-    local callingScript, callingFunc = nil, nil
-
-    if not isReceive then
-        callingScript, callingFunc = self:GetCallerInfo()
-    end
-
-    local data = {
-        remote = remote,
-        method = method,
-        args = args,
-        id = id,
-        metamethod = info.MetaMethod or "__namecall",
-        isReceive = isReceive or false,
-        isExploit = isExploit or false,
-        callingScript = callingScript,
-        callingFunc = callingFunc,
-        className = remote.ClassName,
-        timestamp = tick(),
-        blocked = blocked,
-    }
-
-    self:QueueLog(data)
-
-    if blocked then return end
-
-    if originalFunc and not isReceive then
-        return originalFunc(remote, ...)
     end
 end
 
