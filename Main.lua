@@ -1,105 +1,134 @@
-if getgenv().ArcvourSpyExecuted then
-    warn("[Arcvour Spy] Already running!")
-    return
+--// Base Configuration
+local Configuration = {
+	UseWorkspace = false, 
+	NoActors = false,
+	FolderName = "Arcvour Spy",
+	RepoUrl = [[https://raw.githubusercontent.com/Fami-dev/Arcvour-Spy/refs/heads/main]],
+	ParserUrl = [[https://raw.githubusercontent.com/IEnemyFiles/Roblox-Parser/refs/heads/main/Main.luau]],
+    Directory = "Arcvour Spy"
+}
+
+--// Load overwrites
+local Parameters = {...}
+local Overwrites = Parameters[1]
+if typeof(Overwrites) == "table" then
+	for Key, Value in Overwrites do
+		Configuration[Key] = Value
+	end
 end
 
-if not game:GetService("RunService"):IsClient() then
-    error("[Arcvour Spy] Cannot run on server!")
-    return
+--// Service handler
+local Services = setmetatable({}, {
+	__index = function(self, Name: string): Instance
+		local Service = game:GetService(Name)
+		return cloneref(Service)
+	end,
+})
+
+--// Files module
+local Files = loadstring(game:HttpGet(`{Configuration.RepoUrl}/lib/Files.lua`))()
+Files:PushConfig(Configuration)
+Files:Init({
+	Services = Services
+})
+
+local Folder = Files.FolderName
+local Scripts = {
+	--// User configurations
+	Config = Files:GetModule(`{Folder}/Config`, "Config"),
+	ReturnSpoofs = Files:GetModule(`{Folder}/ReturnSpoofs`, "ReturnSpoofs"),
+	Configuration = Configuration,
+	Files = Files,
+
+	--// Libraries
+	Process = game:HttpGet(`{Configuration.RepoUrl}/lib/Process.lua`),
+	Hook = game:HttpGet(`{Configuration.RepoUrl}/lib/Hook.lua`),
+	Flags = game:HttpGet(`{Configuration.RepoUrl}/lib/Flags.lua`),
+	Ui = game:HttpGet(`{Configuration.RepoUrl}/lib/Ui.lua`),
+	Generation = game:HttpGet(`{Configuration.RepoUrl}/lib/Generation.lua`),
+	Communication = game:HttpGet(`{Configuration.RepoUrl}/lib/Communication.lua`)
+}
+
+--// Services
+local Players: Players = Services.Players
+
+--// Dependencies
+local Modules = Files:LoadLibraries(Scripts)
+local Process = Modules.Process
+local Hook = Modules.Hook
+local Ui = Modules.Ui
+local Generation = Modules.Generation
+local Communication = Modules.Communication
+local Config = Modules.Config
+
+--// Use custom font (optional)
+local FontContent = Files:GetAsset("ProggyClean.ttf", true)
+local FontJsonFile = Files:CreateFont("ProggyClean", FontContent)
+Ui:SetFontFile(FontJsonFile)
+
+--// Load modules
+Process:CheckConfig(Config)
+Files:LoadModules(Modules, {
+	Modules = Modules,
+	Services = Services,
+    Configuration = Configuration
+})
+
+--// ReGui Create window
+local Window = Ui:CreateMainWindow()
+
+--// Check if Sigma spy is supported
+local Supported = Process:CheckIsSupported()
+if not Supported then 
+	Window:Close()
+	return
 end
 
-if not hookfunction then
-    error("[Arcvour Spy] Missing critical function: hookfunction")
-    return
-end
-
-if not newcclosure then
-    error("[Arcvour Spy] Missing critical function: newcclosure")
-    return
-end
-
-if not getnamecallmethod then
-    error("[Arcvour Spy] Missing critical function: getnamecallmethod")
-    return
-end
-
-if not checkcaller then
-    getgenv().checkcaller = function() return false end
-end
-
-if not cloneref then
-    getgenv().cloneref = function(obj) return obj end
-end
-
-if not getcallingscript then
-    getgenv().getcallingscript = function() return nil end
-end
-
-if not getnilinstances then
-    getgenv().getnilinstances = function() return {} end
-end
-
-local REPO_BASE = "https://raw.githubusercontent.com/Fami-dev/Arcvour-Spy/main/"
-
-local function loadModule(name)
-    local url = REPO_BASE .. name .. ".lua"
-    local source = game:HttpGet(url)
-    if not source or source == "" or source:find("404") then
-        error("[Arcvour Spy] Failed to download " .. name)
-    end
-    local fn, compileErr = loadstring(source, "ArcvourSpy_" .. name)
-    if not fn then
-        error("[Arcvour Spy] Failed to compile " .. name .. ": " .. tostring(compileErr))
-    end
-    local success, result = pcall(fn)
-    if not success then
-        error("[Arcvour Spy] Failed to execute " .. name .. ": " .. tostring(result))
-    end
-    return result
-end
-
-local ok, err = pcall(function()
-    local Config = loadModule("Config")
-    local Serializer = loadModule("Serializer")
-    local Process = loadModule("Process")
-    local Hook = loadModule("Hook")
-    local UiModule = loadModule("Ui")
-
-    Process:Init(Config, Serializer)
-    Hook:Init(Config, Process)
-    UiModule:Init(Config, Process, Serializer, Hook)
-
-    UiModule:Build()
-    Process:SetUi(UiModule)
-    Process:StartScheduler()
-    Hook:Start()
-
-    getgenv().ArcvourSpyExecuted = true
-    getgenv().ArcvourSpy = {
-        Config = Config,
-        Process = Process,
-        Hook = Hook,
-        Ui = UiModule,
-        Serializer = Serializer,
-        Shutdown = function()
-            Hook:DisableHooks()
-            Process:Shutdown()
-            UiModule:Shutdown()
-            getgenv().ArcvourSpyExecuted = false
-            getgenv().ArcvourSpy = nil
-        end,
-    }
-
-    getgenv().getNil = function(name, class)
-        for _, v in pairs(getnilinstances()) do
-            if v.ClassName == class and v.Name == name then
-                return v
-            end
-        end
-    end
+--// Create communication channel
+local ChannelId, Event = Communication:CreateChannel()
+Communication:AddCommCallback("QueueLog", function(...)
+	Ui:QueueLog(...)
+end)
+Communication:AddCommCallback("Print", function(...)
+	Ui:ConsoleLog(...)
 end)
 
-if not ok then
-    warn("[Arcvour Spy] Failed to initialize: " .. tostring(err))
-    getgenv().ArcvourSpyExecuted = false
-end
+--// Generation swaps
+local LocalPlayer = Players.LocalPlayer
+Generation:SetSwapsCallback(function(self)
+	self:AddSwap(LocalPlayer, {
+		String = "LocalPlayer",
+	})
+	self:AddSwap(LocalPlayer.Character, {
+		String = "Character",
+		NextParent = LocalPlayer
+	})
+end)
+
+--// Create window content
+Ui:CreateWindowContent(Window)
+
+--// Begin the Log queue 
+Ui:SetCommChannel(Event)
+Ui:BeginLogService()
+
+--// Load hooks
+local ActorCode = Files:MakeActorScript(Scripts, ChannelId)
+Hook:LoadHooks(ActorCode, ChannelId)
+
+local EnablePatches = Ui:AskUser({
+	Title = "Enable function patches?",
+	Content = {
+		"On some executors, function patches can prevent common detections that executor has",
+		"By enabling this, it MAY trigger hook detections in some games, this is why you are asked.",
+		"If it doesn't work, rejoin and press 'No'",
+		"",
+		"(This does not affect game functionality)"
+	},
+	Options = {"Yes", "No"}
+}) == "Yes"
+
+--// Begin hooks
+Event:Fire("BeginHooks", {
+	PatchFunctions = EnablePatches
+})
