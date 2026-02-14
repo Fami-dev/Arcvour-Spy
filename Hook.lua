@@ -208,21 +208,22 @@ function Hook:HookReceives()
         end
     end)
 
-    for _, inst in getnilinstances() do
+    for _, inst in pairs(getnilinstances()) do
         if Process:GetClassData(inst) then
             self:ConnectReceive(inst)
         end
     end
 
-    for _, service in game:GetChildren() do
-        if table.find(blacklistedServices, service.ClassName) then continue end
-        pcall(function()
-            for _, desc in service:GetDescendants() do
-                if Process:GetClassData(desc) then
-                    self:ConnectReceive(desc)
+    for _, service in pairs(game:GetChildren()) do
+        if not table.find(blacklistedServices, service.ClassName) then
+            pcall(function()
+                for _, desc in pairs(service:GetDescendants()) do
+                    if Process:GetClassData(desc) then
+                        self:ConnectReceive(desc)
+                    end
                 end
-            end
-        end)
+            end)
+        end
     end
 end
 

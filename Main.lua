@@ -91,7 +91,7 @@ local ok, err = pcall(function()
     }
 
     getgenv().getNil = function(name, class)
-        for _, v in getnilinstances() do
+        for _, v in pairs(getnilinstances()) do
             if v.ClassName == class and v.Name == name then
                 return v
             end

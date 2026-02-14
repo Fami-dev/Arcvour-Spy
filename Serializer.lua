@@ -32,7 +32,7 @@ local function getInstancePath(obj)
         local parent = current.Parent
 
         if parent == nil then
-            for _, inst in getNilInstances() do
+            for _, inst in pairs(getNilInstances()) do
                 if inst == current then
                     local className = current.ClassName
                     instanceCache[obj] = ('getNil("%s", "%s")'):format(name, className)
@@ -228,7 +228,7 @@ function Serializer:ValueToString(value, depth, visited)
     if vType == "NumberSequence" then
         local keypoints = value.Keypoints
         local kpStrings = {}
-        for _, kp in keypoints do
+        for _, kp in pairs(keypoints) do
             table.insert(kpStrings, ("NumberSequenceKeypoint.new(%s, %s, %s)"):format(
                 kp.Time, kp.Value, kp.Envelope
             ))
@@ -239,7 +239,7 @@ function Serializer:ValueToString(value, depth, visited)
     if vType == "ColorSequence" then
         local keypoints = value.Keypoints
         local kpStrings = {}
-        for _, kp in keypoints do
+        for _, kp in pairs(keypoints) do
             local c = kp.Value
             local r = math.floor(c.R * 255)
             local g = math.floor(c.G * 255)
@@ -322,7 +322,7 @@ function Serializer:ValueToString(value, depth, visited)
                 return ta < tb
             end)
 
-            for _, k in keys do
+            for _, k in pairs(keys) do
                 local v = value[k]
                 local keyStr
                 if type(k) == "string" and k:match("^[%a_][%w_]*$") then

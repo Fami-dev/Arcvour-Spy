@@ -915,7 +915,7 @@ function Ui:UpdateInfoPanel(data)
 
     if not infoPanel then return end
 
-    for _, child in infoPanel:GetChildren() do
+    for _, child in pairs(infoPanel:GetChildren()) do
         if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
             child:Destroy()
         end
@@ -965,7 +965,7 @@ function Ui:UpdateInfoPanel(data)
 end
 
 function Ui:ClearLogs()
-    for _, data in logs do
+    for _, data in ipairs(logs) do
         if data._uiItem then
             data._uiItem:Destroy()
         end
@@ -982,7 +982,7 @@ function Ui:ClearLogs()
         codeBox.Text = "-- Logs cleared"
     end
     if infoPanel then
-        for _, child in infoPanel:GetChildren() do
+        for _, child in pairs(infoPanel:GetChildren()) do
             if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
                 child:Destroy()
             end
