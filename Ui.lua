@@ -26,6 +26,9 @@ local totalRemotes = 0
 local isDragging = false
 local dragStart = nil
 local startPos = nil
+local isResizing = false
+local resizeStart = nil
+local startSize = nil
 local isMinimized = false
 local settingsVisible = false
 
@@ -156,6 +159,7 @@ function Ui:Build()
     self:BuildToolbar()
     self:BuildContent()
     self:BuildSettings()
+    self:BuildResizeHandle()
 end
 
 function Ui:BuildTitleBar()
@@ -335,6 +339,47 @@ function Ui:BuildToolbar()
 
     self.toolbar = toolbar
     self.spyBtn = spyBtn
+end
+
+function Ui:BuildResizeHandle()
+    local colors = Config.Colors
+    local ui = Config.UI
+
+    local handle = create("ImageButton", {
+        Name = "ResizeHandle",
+        Size = UDim2.new(0, 16, 0, 16),
+        Position = UDim2.new(1, -16, 1, -16),
+        BackgroundTransparency = 1,
+        Image = "rbxassetid://6035282286", -- Resize icon
+        ImageColor3 = colors.TextDim,
+        ZIndex = 10,
+        Parent = mainFrame,
+    })
+
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            isResizing = true
+            resizeStart = input.Position
+            startSize = mainFrame.AbsoluteSize
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    isResizing = false
+                end
+            end)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if isResizing and (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - resizeStart
+            local newX = math.max(ui.MinSize.X, startSize.X + delta.X)
+            local newY = math.max(ui.MinSize.Y, startSize.Y + delta.Y)
+            
+            mainFrame.Size = UDim2.fromOffset(newX, newY)
+        end
+    end)
 end
 
 function Ui:BuildContent()

@@ -84,7 +84,7 @@ Config.RemoteClassData = {
 }
 
 Config.UI = {
-    WindowSize = UDim2.fromOffset(680, 420),
+    WindowSize = UDim2.fromOffset(800, 500),
     MinSize = Vector2.new(500, 300),
     CornerRadius = UDim.new(0, 8),
     SmallCorner = UDim.new(0, 6),
