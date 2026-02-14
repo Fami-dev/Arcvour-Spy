@@ -169,27 +169,29 @@ function Hook:ConnectReceive(remote)
             local existingCallback = getcallbackvalue and getcallbackvalue(remote, method)
             if existingCallback then
                 hookfunction(existingCallback, newcclosure(function(...)
+                    local args = {...}
                     task.spawn(function()
                         Process:LogRemote({
                             remote = remote,
                             method = method,
-                            args = {...},
+                            args = args,
                             metamethod = "Connect",
                             isExploit = false,
                             isReceive = true,
                         })
                     end)
-                    return existingCallback(...)
+                    return existingCallback(unpack(args))
                 end))
             end
         end)
     else
         pcall(function()
             remote[method]:Connect(function(...)
+                local args = {...}
                 Process:LogRemote({
                     remote = remote,
                     method = method,
-                    args = {...},
+                    args = args,
                     metamethod = "Connect",
                     isExploit = false,
                     isReceive = true,
